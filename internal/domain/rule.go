@@ -161,6 +161,13 @@ func (r Rule) HasTarget(target Target) bool {
 	return false
 }
 
+// Targets retorna todos os Targets que esta regra deve inspecionar.
+func (r Rule) Targets() []Target {
+	result := make([]Target, len(r.targets))
+	copy(result, r.targets)
+	return result
+}
+
 // Matches retorna true se o texto fornecido bate com o padrão da regra.
 func (r Rule) Matches(text string) bool {
 	return r.pattern.MatchString(text)

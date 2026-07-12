@@ -1,4 +1,4 @@
-module github.com/SEU_USUARIO/edge-waf-engine
+module github.com/tensairod/edge-waf-engine
 
 go 1.22.2
 
