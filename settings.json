@@ -1,0 +1,22 @@
+{
+  "go.useLanguageServer": true,
+  "go.lintTool": "golangci-lint",
+  "go.lintOnSave": "workspace",
+  "go.formatTool": "gofmt",
+  "editor.formatOnSave": true,
+  "[go]": {
+    "editor.defaultFormatter": "golang.go",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "always"
+    }
+  },
+  "go.testOnSave": false,
+  "go.coverOnSave": false,
+  "go.coverageDecorator": {
+    "type": "gutter"
+  },
+  "gopls": {
+    "formatting.gofumpt": false
+  }
+}
