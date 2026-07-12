@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SEU_USUARIO/edge-waf-engine/internal/domain"
+	"github.com/tensairod/edge-waf-engine/internal/domain"
 )
 
 func validParams() domain.RequestContextParams {

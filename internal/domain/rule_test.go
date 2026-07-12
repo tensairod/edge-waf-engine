@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SEU_USUARIO/edge-waf-engine/internal/domain"
+	"github.com/tensairod/edge-waf-engine/internal/domain"
 )
 
 func TestNewRule_HappyPath(t *testing.T) {
@@ -54,6 +54,34 @@ func TestNewRule_HasTarget(t *testing.T) {
 
 	assert.True(t, rule.HasTarget(domain.TargetQuery))
 	assert.True(t, rule.HasTarget(domain.TargetBody))
+	assert.False(t, rule.HasTarget(domain.TargetHeaders))
+}
+
+func TestNewRule_Targets(t *testing.T) {
+	rule, err := domain.NewRule(
+		"sqli-001",
+		domain.CategorySQLInjection,
+		`test`,
+		[]domain.Target{domain.TargetQuery, domain.TargetBody},
+		domain.SeverityHigh,
+		"",
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, []domain.Target{domain.TargetQuery, domain.TargetBody}, rule.Targets())
+}
+
+func TestNewRule_TargetsReturnsCopyNotInternalSlice(t *testing.T) {
+	rule, err := domain.NewRule(
+		"sqli-001", domain.CategorySQLInjection, "test",
+		[]domain.Target{domain.TargetQuery}, domain.SeverityHigh, "",
+	)
+	require.NoError(t, err)
+
+	got := rule.Targets()
+	got[0] = domain.TargetHeaders
+
+	assert.True(t, rule.HasTarget(domain.TargetQuery))
 	assert.False(t, rule.HasTarget(domain.TargetHeaders))
 }
 
