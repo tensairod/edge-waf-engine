@@ -1,0 +1,37 @@
+feat(application,infrastructure): implement RateLimiter (token bucket)
+
+Implements the RateLimiter interface (application layer) and its
+concrete in-memory implementation, TokenBucketRateLimiter
+(infrastructure layer), closing the Rate Limiting milestone (M3).
+Closes #6.
+
+- RateLimiter interface lives in the application package for the same
+  reason ConfigSource lives in config-validator's application package:
+  the future WAFEngine (#7) depends on this abstraction; the concrete
+  implementation lives in infrastructure and implements it (Dependency
+  Inversion).
+- TokenBucketRateLimiter uses the classic token bucket algorithm: each
+  IP gets its own bucket that refills continuously at a fixed rate and
+  is capped at `capacity` (never overflows even after long idle
+  periods — verified explicitly with a 1-hour time jump).
+- The internal clock is injectable via WithClock(...) purely for
+  deterministic testing — real time.Sleep-based tests would be slow
+  (seconds of real wall-clock time per refill test) and potentially
+  flaky under CI load. Tests advance a fake clock instantly instead.
+- Cleanup() does NOT run automatically via an internal goroutine/ticker
+  — deliberately, to avoid hiding a long-running goroutine whose
+  lifecycle would be hard to control (when does it stop? how do tests
+  avoid leaking it between runs?). The real process entrypoint
+  (cmd/edge-waf-engine, #11) decides the right cleanup cadence based on
+  real traffic volume — not a decision this package should make alone.
+- Explicitly tested for concurrency safety with `go test -race`: a rate
+  limiter is inherently accessed by many goroutines at once (each HTTP
+  request arrives on its own goroutine), and a race here would be
+  particularly severe — it's exactly the component meant to prevent
+  abuse, so a race enabling limit bypass would defeat its purpose.
+
+Tests: 9 tests (constructor validation, burst-to-capacity blocking,
+refill over time, capacity ceiling after long idle, independent buckets
+per IP, Len(), Cleanup() removing only idle entries, Cleanup() removing
+nothing when all active, and a 1000-iteration concurrent-access test
+run under -race). All pass, including with -race enabled.
