@@ -1,0 +1,39 @@
+feat(infrastructure): implement WAFReverseProxy
+
+Implements WAFReverseProxy, an http.Handler wrapping
+httputil.ReverseProxy that inspects every real HTTP request through the
+WAFEngine before deciding whether to forward it to the backend or
+return 403. This is the first component that touches real network
+I/O. Closes #8.
+
+- readAndRestoreBody reads the request body for WAF inspection, then
+  restores it via io.NopCloser(bytes.NewReader(...)) before letting the
+  reverse proxy forward the request — io.Reader can only be consumed
+  once, so skipping this would silently forward an empty body to the
+  backend for every POST/PUT. Covered by an explicit test
+  (TestWAFReverseProxy_BodyIsPreservedWhenForwardedToBackend).
+- extractSourceIP deliberately does NOT trust X-Forwarded-For (or
+  similar client-supplied headers): that header is provided by the
+  client itself and can be forged freely. Trusting it without a
+  configured allowlist of trusted upstream proxies would make rate
+  limiting trivially bypassable (send a different X-Forwarded-For value
+  per request). Documented as a deliberate limitation / future
+  evolution, not implemented naively.
+- The 403 response body is a generic "Forbidden", with no detail about
+  which rule fired or why — that detail belongs in structured logging
+  (#9), not in the HTTP response. Returning it to the client would give
+  anyone probing the WAF a useful signal about what to adjust in their
+  next payload.
+- extractSourceIP handles a malformed RemoteAddr gracefully (400, not a
+  panic) even though this is practically unreachable with a real
+  net/http server (Go guarantees RemoteAddr is populated correctly from
+  the TCP connection) — kept as defensive validation rather than
+  assuming it can never happen, team-reviewed and confirmed reasonable
+  rather than over-engineering.
+
+Tests: 6 tests using httptest.NewServer as a real fake backend and
+httptest.NewRecorder/NewRequest for real HTTP request/response objects
+— covering allowed-request forwarding, blocked-request never reaching
+the backend (both rule violation and rate limit), dry-run still
+forwarding a malicious request, body preservation, and the malformed
+RemoteAddr edge case.

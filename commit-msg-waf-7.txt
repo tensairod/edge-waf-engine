@@ -1,0 +1,35 @@
+feat(application): implement WAFEngine orchestrating detection + rate limiting
+
+Implements WAFEngine, which combines RateLimiter and DetectionEngine
+into a single final decision per request, with configurable dry-run
+and fail-open/fail-closed behavior. Closes #7.
+
+- BlockReason is a separate type from domain.Category on purpose: rate
+  limiting and internal errors aren't attack categories (SQLi, XSS...),
+  they're block reasons of a fundamentally different nature. Reusing
+  Category here would mix two concepts the domain layer keeps
+  deliberately separate.
+- Rate limiting is checked BEFORE rule detection: a map lookup
+  (RateLimiter.Allow) is orders of magnitude cheaper than running ~13
+  regexes against the full query/body/headers. Rejecting early on
+  excess traffic avoids wasting CPU analyzing a request that would be
+  discarded anyway — this matters most exactly when the WAF is under a
+  DoS-style attack, i.e. when efficiency is most needed.
+- Process() wraps both RateLimiter.Allow and DetectionEngine.Evaluate in
+  a single defer/recover: neither has an error-returning API today
+  (both are designed to never fail in normal operation), so recover()
+  here is genuine defense in depth — a future bug (or a malformed rule
+  that somehow slips past validation) causing a panic in either must
+  never take down the whole proxy process. FailMode (open/closed)
+  controls what happens to the request when that recovery kicks in.
+- DryRun always wins over FailClosed, even on a recovered internal
+  error — validated explicitly with the team. This is consistent with
+  what dry-run promises (RF09: safely test new rules in production),
+  but it does mean dry-run also masks internal engine failures, not
+  just rule false positives. Accepted trade-off, not an oversight.
+
+Tests: 12 tests covering constructor validation, clean requests, rule
+violations, dry-run reporting-without-blocking, rate-limit blocking,
+rate-limit-before-detection ordering, panic recovery under both fail
+modes, dry-run overriding fail-closed on panic, and an explicit
+assert.NotPanics regression guard.

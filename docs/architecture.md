@@ -22,12 +22,12 @@ flowchart TD
 | Camada/Componente | Status | Detalhes |
 |---|---|---|
 | **Domain** (`internal/domain`) | ✅ Completo (M1) | `Rule`, `RequestContext`, `Verdict`, `RuleSet` |
-| **DetectionEngine** (`internal/application`) | ✅ Completo | Avalia `RequestContext` contra `RuleSet`, agrega violações |
-| **Conjunto padrão de regras** (`internal/application/default_rules.go`) | ✅ Completo | 13 regras: SQLi, XSS, Path Traversal, Command Injection |
-| **RateLimiter** | ⏳ Pendente (M3, Issue 6) | Em memória, por IP |
-| **WAFEngine** (orquestração final) | ⏳ Pendente (M4, Issue 7) | Combina detecção + rate limit + dry-run + fail-open/closed |
-| **ReverseProxy** | ⏳ Pendente (M4, Issue 8) | `net/http/httputil.ReverseProxy` |
-| **Logging estruturado** | ⏳ Pendente (M4, Issue 9) | `log/slog` |
+| **DetectionEngine** (`internal/application`) | ✅ Completo (M2) | Avalia `RequestContext` contra `RuleSet`, agrega violações |
+| **Conjunto padrão de regras** (`internal/application/default_rules.go`) | ✅ Completo (M2) | 13 regras: SQLi, XSS, Path Traversal, Command Injection |
+| **RateLimiter** | ✅ Completo (M3) | Em memória, por IP, token bucket |
+| **WAFEngine** (orquestração final) | ✅ Completo (M4) | Combina detecção + rate limit + dry-run + fail-open/closed |
+| **ReverseProxy** | ✅ Completo (M4) | `net/http/httputil.ReverseProxy` |
+| **Logging estruturado** | ✅ Completo (M4) | `log/slog`, JSON |
 | **Carregador de `rules.yaml`** | ⏳ Pendente (M5, Issue 10) | Regras externas, não hardcoded |
 | **CLI (`cmd/edge-waf-engine`)** | ⏳ Pendente (M5, Issue 11) | Entrypoint configurável |
 
@@ -91,3 +91,36 @@ positivos conhecidos e "paranoia levels" configuráveis para ajustar esse
 equilíbrio. Uma evolução futura razoável seria expor essa mesma ideia de
 "paranoia level" — regras mais/menos agressivas configuráveis pelo
 operador — mas isso está fora do escopo atual.
+
+### 3. `DetectionEngine.Evaluate` tem um branch de `panic()` sem cobertura de teste
+
+**Status:** decisão consciente, validada com o time.
+
+O branch de erro de `domain.NewBlockVerdict` dentro de `Evaluate` é
+genuinamente inalcançável via qualquer caminho da API pública: o `if
+len(violations) == 0` logo acima garante que `NewBlockVerdict` nunca
+recebe uma lista vazia ali. Forçar cobertura desse `panic` exigiria
+construir um cenário artificial (ex: expor `NewBlockVerdict` de um jeito
+que permitisse quebrar o invariante só para o teste), o que testaria uma
+situação que nunca ocorre em uso real — mais teatro de cobertura do que
+proteção de verdade.
+
+`go tool cover` mostra este arquivo abaixo de 100% por causa disso; é
+esperado e aceito, não um gap a ser fechado.
+
+### 4. O log estruturado inclui o texto literal que disparou uma regra (`matched_text`)
+
+**Status:** decisão consciente, mesmo padrão usado por WAFs reais.
+
+O `BlockLogger` (Issue 9) inclui, para cada violação, o trecho exato do
+conteúdo da requisição que disparou a regra (truncado a 200 caracteres).
+Isso é essencial para depurar falsos positivos e investigar ataques reais
+— mas significa que, se uma regra disparar por engano sobre um valor
+legítimo sensível (ex: um nome de usuário incomum), esse valor acaba no
+log.
+
+Isso não é uma falha de projeto — é como ModSecurity, AWS WAF e
+praticamente todo WAF baseado em log de payload funcionam. Mas é
+relevante o suficiente para quem for operar isto com requisitos de
+compliance (GDPR, LGPD) considerar antes de habilitar retenção de log
+de longo prazo sem uma política de expurgo/anonimização.
