@@ -16,18 +16,36 @@ import (
 	"github.com/tensairod/edge-waf-engine/internal/domain"
 )
 
+// BlockLogger é implementado por qualquer coisa capaz de registrar o
+// resultado do processamento de uma requisição pelo WAF.
+//
+// Definida aqui, no pacote que a consome (WAFReverseProxy), seguindo a
+// convenção idiomática de Go: pacotes definem as interfaces que
+// PRECISAM, não os pacotes que as implementam. A implementação real
+// (logging.BlockLogger, baseada em log/slog) vive em
+// internal/infrastructure/logging e satisfaz esta interface
+// estruturalmente, sem precisar importá-la.
+type BlockLogger interface {
+	LogIfBlocked(ctx domain.RequestContext, result application.ProcessResult)
+}
+
 // WAFReverseProxy é um http.Handler que inspeciona cada requisição
 // através de um WAFEngine antes de encaminhá-la (ou não) ao backend real.
 type WAFReverseProxy struct {
 	engine       application.WAFEngine
+	logger       BlockLogger
 	reverseProxy *httputil.ReverseProxy
 }
 
 // NewWAFReverseProxy constrói um WAFReverseProxy que encaminha
-// requisições permitidas para backendURL.
-func NewWAFReverseProxy(backendURL *url.URL, engine application.WAFEngine) *WAFReverseProxy {
+// requisições permitidas para backendURL, e registra via logger toda
+// requisição bloqueada (ou que seria bloqueada em dry-run).
+func NewWAFReverseProxy(
+	backendURL *url.URL, engine application.WAFEngine, logger BlockLogger,
+) *WAFReverseProxy {
 	return &WAFReverseProxy{
 		engine:       engine,
+		logger:       logger,
 		reverseProxy: httputil.NewSingleHostReverseProxy(backendURL),
 	}
 }
@@ -47,6 +65,10 @@ func (p *WAFReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := p.engine.Process(ctx)
+	if result.Reason != application.BlockReasonNone {
+		p.logger.LogIfBlocked(ctx, result)
+	}
+
 	if result.Blocked {
 		// Mensagem deliberadamente genérica: não expõe qual regra foi
 		// violada nem por quê — essa informação vai para o log
