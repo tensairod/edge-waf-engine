@@ -1,0 +1,44 @@
+feat(infrastructure): add structured logging of blocked requests
+
+Implements BlockLogger (log/slog, JSON output) and wires it into
+WAFReverseProxy, closing the WAF Engine & Proxy milestone (M4) in
+full. Closes #9.
+
+- BlockLogger.LogIfBlocked logs source IP, method, path, block reason,
+  blocked/dry_run flags, and (for rule violations) each violation's
+  rule ID, category, severity, target, and matched text — truncated to
+  200 chars to prevent a single request with a huge payload from
+  inflating log volume unboundedly (or being used as an indirect
+  logging-based DoS via disk exhaustion).
+- BlockLogger interface is defined in the proxy package (its consumer),
+  not in application — unlike RateLimiter, there's no
+  Application/Infrastructure dependency inversion happening here, just
+  one Infrastructure component (WAFReverseProxy) depending on the
+  minimal interface it needs from another Infrastructure component
+  (logging.BlockLogger). Idiomatic Go: accept small interfaces defined
+  by the consumer, without forcing an architectural pattern that
+  doesn't fit this case.
+- Real bug found and fixed during development: the first version had
+  WAFReverseProxy call logger.LogIfBlocked(...) unconditionally for
+  every request, delegating the "should this actually log anything"
+  decision entirely to the real BlockLogger implementation. That works
+  with the real logger, but breaks testability — any fake logger used
+  in tests would need to duplicate that same filtering rule. Fixed by
+  moving the decision to the proxy (single source of truth: only call
+  the logger when result.Reason != BlockReasonNone), keeping the guard
+  inside BlockLogger itself as defense in depth, not the only line of
+  protection. Caught by an explicit test asserting a clean request
+  never triggers the logger.
+- Documented (docs/architecture.md, debt item #4) that matched_text
+  logs the literal offending content — same behavior as ModSecurity,
+  AWS WAF, and virtually every payload-logging WAF, but worth flagging
+  for anyone operating this under GDPR/LGPD-style compliance
+  requirements before enabling long-term log retention without a
+  purge/anonymization policy. Also updated the implementation status
+  table, which had gone stale since #6/#7/#8 were completed.
+
+Tests: 7 new BlockLogger tests (JSON structure, rate-limit/internal-error
+reasons without a violations field, dry-run message wording, truncation)
+plus updated proxy tests asserting the logger is invoked exactly when
+expected (rule violation, rate limit, dry-run) and never for clean or
+pre-WAFEngine-failure requests.
