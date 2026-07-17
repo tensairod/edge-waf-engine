@@ -1,0 +1,19 @@
+# Binários compilados
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Saída de testes e cobertura
+*.test
+*.out
+coverage.html
+
+# Diretórios de dependências (não usamos vendoring)
+vendor/
+
+# Arquivos de IDE que não devem ser compartilhados
+.idea/
+*.swp
